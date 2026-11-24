@@ -1,0 +1,250 @@
+import 'package:flutter/material.dart';
+import 'services/api_service.dart';
+
+void main() => runApp(const MonCvApp());
+
+class MonCvApp extends StatelessWidget {
+  const MonCvApp({super.key});
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      debugShowCheckedModeBanner: false,
+      title: 'CV Miriam ',
+      theme: ThemeData(primarySwatch: Colors.pink),
+      home: const LoginPage(),
+    );
+  }
+}
+
+// ---------- LOGIN ----------
+class LoginPage extends StatefulWidget {
+  const LoginPage({super.key});
+  @override
+  State<LoginPage> createState() => _LoginPageState();
+}
+
+class _LoginPageState extends State<LoginPage> {
+  final emailCtrl = TextEditingController();
+  final passCtrl = TextEditingController();
+  bool isLoading = false;
+
+  Future<void> _login() async {
+    setState(() => isLoading = true);
+    final ok = await ApiService.seConnecter(
+      emailCtrl.text.trim(),
+      passCtrl.text.trim(),
+    );
+    if (!mounted) return;
+    setState(() => isLoading = false);
+    if (ok) {
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (_) => const MainNavigation()),
+      );
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Email ou mot de passe incorrect')),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('Connexion - TP2 Miriam')),
+      body: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          children: [
+            TextField(controller: emailCtrl, decoration: const InputDecoration(labelText: 'Email')),
+            TextField(controller: passCtrl, obscureText: true, decoration: const InputDecoration(labelText: 'Mot de passe')),
+            const SizedBox(height: 20),
+            isLoading
+                ? const CircularProgressIndicator()
+                : ElevatedButton(onPressed: _login, child: const Text('Se connecter')),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ---------- NAVIGATION ----------
+class MainNavigation extends StatefulWidget {
+  const MainNavigation({super.key});
+  @override
+  State<MainNavigation> createState() => _MainNavigationState();
+}
+
+class _MainNavigationState extends State<MainNavigation> {
+  int index = 0;
+  final pages = const [CvPage(), FamilyPage()];
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: pages[index],
+      bottomNavigationBar: BottomNavigationBar(
+        currentIndex: index,
+        onTap: (i) => setState(() => index = i),
+        items: const [
+          BottomNavigationBarItem(icon: Icon(Icons.person), label: 'Mon CV'),
+          BottomNavigationBarItem(icon: Icon(Icons.family_restroom), label: 'Ma Famille'),
+        ],
+      ),
+    );
+  }
+}
+
+class CvPage extends StatelessWidget {
+  const CvPage({super.key});
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('Mon CV')),
+      body: const Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Text('Miriam Zawadi', style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
+            Text('ISIG - Licence 3'),
+            Text('Langage de Programmation Mobile - TP2'),
+            SizedBox(height: 10),
+            Text('Application Flutter connectée à une API REST PHP / MySQL'),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ---------- FAMILLE - DYNAMIQUE AVEC API ----------
+class FamilyPage extends StatefulWidget {
+  const FamilyPage({super.key});
+  @override
+  State<FamilyPage> createState() => _FamilyPageState();
+}
+
+class _FamilyPageState extends State<FamilyPage> {
+  late Future<List<Map<String, dynamic>>> _future;
+
+  @override
+  void initState() {
+    super.initState();
+    _future = ApiService.getFamilyMembers();
+  }
+
+  void _reload() => setState(() => _future = ApiService.getFamilyMembers());
+
+  Future<void> _showForm({Map<String, dynamic>? membre}) async {
+    final nom = TextEditingController(text: membre?['nom'] ?? '');
+    final postnom = TextEditingController(text: membre?['postnom'] ?? '');
+    final prenom = TextEditingController(text: membre?['prenom'] ?? '');
+    final lieu = TextEditingController(text: membre?['lieu_naissance'] ?? '');
+    final date = TextEditingController(text: membre?['date_naissance'] ?? '');
+    final parente = TextEditingController(text: membre?['parente'] ?? '');
+
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(membre == null ? 'Ajouter un membre' : 'Modifier un membre'),
+        content: SingleChildScrollView(
+          child: Column(
+            children: [
+              TextField(controller: nom, decoration: const InputDecoration(labelText: 'Nom')),
+              TextField(controller: postnom, decoration: const InputDecoration(labelText: 'Postnom')),
+              TextField(controller: prenom, decoration: const InputDecoration(labelText: 'Prénom')),
+              TextField(controller: lieu, decoration: const InputDecoration(labelText: 'Lieu de naissance')),
+              TextField(controller: date, decoration: const InputDecoration(labelText: 'Date naissance AAAA-MM-JJ')),
+              TextField(controller: parente, decoration: const InputDecoration(labelText: 'Parenté')),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(dialogContext, false), child: const Text('Annuler')),
+          ElevatedButton(
+            onPressed: () async {
+              final data = {
+                'nom': nom.text, 'postnom': postnom.text, 'prenom': prenom.text,
+                'lieu_naissance': lieu.text, 'date_naissance': date.text, 'parente': parente.text,
+              };
+              bool success;
+              if (membre == null) {
+                success = await ApiService.ajouterMembre(data);
+              } else {
+                success = await ApiService.modifierMembre(int.parse(membre['id'].toString()), data);
+              }
+              if (dialogContext.mounted) Navigator.pop(dialogContext, success);
+            },
+            child: const Text('Enregistrer'),
+          ),
+        ],
+      ),
+    );
+    if (ok == true) {
+      _reload();
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Opération réussie')));
+    }
+  }
+
+  Future<void> _supprimer(Map<String, dynamic> m) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (c) => AlertDialog(
+        title: const Text('Supprimer ?'),
+        content: Text('Supprimer ${m['prenom']} ${m['nom']} ?'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('Non')),
+          ElevatedButton(onPressed: () => Navigator.pop(c, true), child: const Text('Oui')),
+        ],
+      ),
+    );
+    if (confirm == true) {
+      await ApiService.supprimerMembre(int.parse(m['id'].toString()));
+      _reload();
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('Ma Famille - API')),
+      floatingActionButton: FloatingActionButton(
+        onPressed: () => _showForm(),
+        child: const Icon(Icons.add),
+      ),
+      body: FutureBuilder<List<Map<String, dynamic>>>(
+        future: _future,
+        builder: (context, snap) {
+          if (snap.connectionState == ConnectionState.waiting) {
+            return const Center(child: CircularProgressIndicator());
+          }
+          if (snap.hasError) return Center(child: Text('Erreur: ${snap.error}'));
+          final membres = snap.data ?? [];
+          if (membres.isEmpty) return const Center(child: Text('Aucun membre. Appuyez sur + pour ajouter.'));
+          return ListView.builder(
+            itemCount: membres.length,
+            itemBuilder: (context, i) {
+              final m = membres[i];
+              return Card(
+                child: ListTile(
+                  title: Text('${m['prenom'] ?? ''} ${m['nom'] ?? ''} ${m['postnom'] ?? ''}'),
+                  subtitle: Text('Parenté: ${m['parente'] ?? ''} - Né à ${m['lieu_naissance'] ?? ''} le ${m['date_naissance'] ?? ''}'),
+                  trailing: PopupMenuButton(
+                    onSelected: (v) {
+                      if (v == 'modif') _showForm(membre: m);
+                      if (v == 'supp') _supprimer(m);
+                    },
+                    itemBuilder: (_) => const [
+                      PopupMenuItem(value: 'modif', child: Text('Modifier')),
+                      PopupMenuItem(value: 'supp', child: Text('Supprimer')),
+                    ],
+                  ),
+                ),
+              );
+            },
+          );
+        },
+      ),
+    );
+  }
+}
